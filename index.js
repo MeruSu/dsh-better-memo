@@ -55,6 +55,7 @@ function shape(entry) {
   return {
     id: entry.id,
     scope: entry.scope,
+    sessionId: entry.sessionId,
     title: entry.title,
     body: entry.body,
     done: entry.done,
@@ -217,13 +218,13 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'memo_edit',
     description:
-      '新增 / 修改 / 删除备忘录。op=add 需要 scope(session|profile) + title 或 body；' +
-      'op=update / op=delete 需要 id。只能改自己看得到的 session / profile 条目，user 条目改不了。',
+      '新增 / 修改 / 删除备忘录。op=add 需要 title 或 body，scope 默认 session（归本会话），' +
+      '要共享才写 profile；op=update / op=delete 需要 id。只能改自己看得到的 session / profile 条目，user 条目改不了。',
     parameters: schema(
       {
         op: { type: 'string', enum: ['add', 'update', 'delete'], description: '要做的操作。' },
         id: { type: 'string', description: 'update / delete 用的条目 id（memo_list 返回的那个）。' },
-        scope: { type: 'string', enum: AGENT_SCOPES, description: 'add 用：session 只给本会话，profile 给本 profile 所有会话。' },
+        scope: { type: 'string', enum: AGENT_SCOPES, description: 'add 用：默认 session，只给本会话；写 profile 才会给本 profile 所有会话。' },
         title: { type: 'string', description: `一句话标题，最多 ${LIMITS.title} 字。` },
         body: { type: 'string', description: `正文，最多 ${LIMITS.body} 字。` },
         done: { type: 'boolean', description: 'update 用：是否标记为已完成。' },
@@ -239,8 +240,12 @@ export function apply(ctx, config = {}) {
       const op = args?.op;
       try {
         if (op === 'add') {
+          const scope = args?.scope === undefined ? 'session' : args?.scope;
+          if (AGENT_SCOPES.includes(scope) === false) {
+            return { ok: false, error: `scope must be one of ${AGENT_SCOPES.join('|')} (you cannot write "user")` };
+          }
           const entry = addEntry(db, {
-            scope: args?.scope,
+            scope,
             sessionId,
             profile,
             title: args?.title,
