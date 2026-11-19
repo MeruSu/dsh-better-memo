@@ -1,45 +1,59 @@
 /**
- * dsh-better-memo — Client half.
+ * dsh-better-memo — Client half (0.2.0 popout form).
  *
- * One tab seat on conversation.view (better-memo-seat, order 1, label
- * 「备忘录」) that renders the three-scope memo panel. Everything lives inside
- * factory(require) — the host concatenates every plugin client into one module,
- * so a single top-level const would collide with another plugin and take the
- * whole page down.
+ * Shape: a top-bar capsule (slot shell.overlay) opens a floating card list;
+ * every row copies its memo to the clipboard on click. The gear turns the same
+ * overlay into a centered management page (the three-scope CRUD UI) whose first
+ * row carries the showTabEntry switch. When that switch is on, a
+ * conversation.view tab seat is registered; when off, it is disposed. When
+ * shell.overlay is not declared (plain web) the capsule falls back to a fixed
+ * round button in the bottom-right corner of document.body.
  *
- * Data path: the panel only ever talks to the host route /better-memo
- * (GET /state?sessionId=… and GET /write?…), always with the
- * x-better-memo: 1 marker. The host's webserver answers GET/HEAD only, so
- * writes are GETs too. Every write answers the full, fresh state payload, which
- * the panel swaps straight in — no follow-up read.
+ * Hard constraints held here on purpose (each has burned a release before):
+ *   - every declaration lives inside factory(): the host concatenates every
+ *     plugin client into ONE module, so a top-level const collides and the whole
+ *     page dies with "Identifier X has already been declared".
+ *   - CSS is plain string concatenation, never a template literal: one stray
+ *     backtick truncates the file and the bundle fails to parse.
+ *   - ctx.get('slots') is used instead of ctx.slots (property access throws
+ *     when the service is not injected, and the whole entry shows "failed").
+ *   - no native confirm; no background on the 40px drag band; the capsule is
+ *     -webkit-app-region:no-drag.
  *
- * The current session id comes from the seat component's props.sessionId;
- * when a view has none, the 本会话 group is hidden and the session scope option
- * is disabled rather than guessed.
- *
- * DO NOT introduce a top-level declaration, a template literal in the CSS, or a
- * native confirm dialog (deletes use an inline two-step confirm instead).
+ * Data path: GET /better-memo/state?sessionId=…, GET /better-memo/write?… and
+ * GET /better-memo/settings?showTabEntry=1|0 — all with the x-better-memo: 1
+ * marker. Writes answer the full fresh state payload, which the panels swap in.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-better-memo',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
+    const ReactDOM = require('react-dom');
+    const ReactDOMClient = require('react-dom/client');
 
     const NS = 'better-memo';
-    const VERSION = '0.1.0';
+    const VERSION = '0.2.0';
     const SLOT = 'conversation.view';
     const SEAT_ID = 'better-memo-seat';
+    const TOPBAR_SLOT = 'shell.overlay';
+    const CAPSULE_ID = 'better-memo.capsule';
+    const FALLBACK_HOST_ID = 'better-memo-overlay-fallback';
     const ROUTE = '/better-memo';
     const MARKER = { 'x-better-memo': '1' };
     const STYLE_ID = 'better-memo-style';
     const CONFIRM_MS = 3000;
     const OUT_MS = 160;
-    const MAX_STAGGER = 8;
     const STAGGER_MS = 40;
+    /* (MAX_STAGGER - 1) * STAGGER_MS = 280ms, the spec's stagger cap. */
+    const MAX_STAGGER = 8;
+    const COPY_MS = 1200;
+    const RETRY_LIMIT = 20;
+    const RETRY_MS = 250;
 
     const FALLBACK_LIMITS = { title: 120, body: 4000, entries: 500 };
     const GROUP_LABEL = { session: '本会话', profile: '本 profile', user: '仅我可见' };
+    const SCOPE_TAG = { session: '会话', profile: '共享', user: '私人' };
     const HINT_TEXT =
       '本会话只在本会话里出现；本 profile 会出现在同一 profile 的所有会话；' +
       '仅我可见只有你自己在这个面板里看得到，AI 读不到，也改不了。';
@@ -50,6 +64,7 @@ window.__ModuleLoader__.load({
     /* CSS is plain string concatenation on purpose: a template literal here would
        let an accidental backtick truncate the file and break the whole bundle. */
     const CSS = [
+      /* ---- management UI (unchanged from 0.1.0) ---- */
       '.bm-panel{display:flex;flex-direction:column;gap:14px;padding:16px 20px;font-size:13px;color:inherit;box-sizing:border-box;animation:bm-enter-frames 200ms cubic-bezier(.22,1,.36,1) both}',
       '.bm-panel *{box-sizing:border-box}',
       '.bm-head{display:flex;align-items:center;gap:6px}',
@@ -66,9 +81,9 @@ window.__ModuleLoader__.load({
       '.bm-form{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;background:var(--dsw-alias-bg-l2,rgba(127,127,127,.07));border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.16))}',
       '.bm-form-top{display:flex;gap:8px;align-items:center}',
       '.bm-field{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,#8a8f98)}',
-      '.bm-input{font:inherit;font-size:13px;width:100%;border-radius:8px;border:1px solid var(--dsw-alias-border-l4,rgba(127,127,127,.32));background:var(--dsw-alias-bg-base,transparent);color:inherit;padding:8px 10px}',
+      '.bm-input{font:inherit;font-size:13px;width:100%;border-radius:8px;border:1px solid var(--dsw-alias-border-l4,rgba(127,127,127,.32));background:var(--dsw-alias-bg-l2,rgba(127,127,127,.10));color:inherit;padding:8px 10px}',
       '.bm-input:focus{outline:none;border-color:var(--dsw-alias-accent,#3b82f6)}',
-      '.bm-select{font:inherit;font-size:13px;border-radius:8px;border:1px solid var(--dsw-alias-border-l4,rgba(127,127,127,.32));background:var(--dsw-alias-bg-base,transparent);color:inherit;padding:6px 8px}',
+      '.bm-select{font:inherit;font-size:13px;border-radius:8px;border:1px solid var(--dsw-alias-border-l4,rgba(127,127,127,.32));background:var(--dsw-alias-bg-l2,rgba(127,127,127,.10));color:inherit;padding:6px 8px}',
       '.bm-textarea{resize:vertical;min-height:58px;line-height:19px}',
       '.bm-form-actions{display:flex;justify-content:flex-end;gap:8px}',
       '.bm-note{margin:0;font-size:11px;color:var(--dsw-alias-label-tertiary,#9aa0a6)}',
@@ -91,17 +106,65 @@ window.__ModuleLoader__.load({
       '.bm-error{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--dsw-alias-danger,#e5484d);color:var(--dsw-alias-danger,#e5484d);font-size:12px}',
       '.bm-error-spacer{flex:1 1 auto}',
       '.bm-loading{margin:0;font-size:12px;color:var(--dsw-alias-label-secondary,#8a8f98)}',
-      '@keyframes bm-enter-frames{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}',
+      /* ---- entry capsule ---- */
+      '.bm-capsule{position:fixed;top:6px;right:150px;z-index:2147483000;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:14px;border:1px solid var(--dsw-alias-border-l3,rgba(127,127,127,.36));background:var(--dsw-alias-bg-l1,rgba(40,42,52,.92));color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:12px;line-height:1;cursor:pointer;pointer-events:auto;-webkit-app-region:no-drag;box-shadow:0 2px 10px rgba(0,0,0,.18)}',
+      '.bm-capsule:hover{border-color:var(--dsw-alias-border-l2,rgba(127,127,127,.55))}',
+      '.bm-capsule[data-bm-open="1"]{border-color:var(--dsw-alias-accent,#3b82f6)}',
+      '.bm-capsule-floating{top:auto;right:16px;bottom:16px;height:40px;min-width:40px;padding:0 14px;border-radius:20px;box-shadow:0 6px 20px rgba(0,0,0,.28)}',
+      '.bm-capsule-label{font-weight:500;white-space:nowrap}',
+      '.bm-capsule-count{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--dsw-alias-accent,#3b82f6);color:#fff;font-size:10px;line-height:16px;text-align:center}',
+      /* ---- floating card ---- */
+      '.bm-card{position:fixed;top:40px;right:150px;width:320px;max-height:60vh;z-index:2147483100;display:flex;flex-direction:column;border-radius:12px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.22));background:var(--dsw-alias-bg-l1,#26262e);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 18px 48px rgba(0,0,0,.4);overflow:hidden;pointer-events:auto;-webkit-app-region:no-drag;animation:bm-enter-frames 200ms cubic-bezier(.22,1,.36,1) both}',
+      '.bm-card-floating{top:auto;right:16px;bottom:64px}',
+      '.bm-card-out{animation:bm-out-frames 160ms cubic-bezier(.4,0,1,1) forwards;pointer-events:none}',
+      '.bm-card-head{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.16))}',
+      '.bm-card-title{font-size:13px;font-weight:600}',
+      '.bm-card-count{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f98)}',
+      '.bm-card-spacer{flex:1 1 auto}',
+      '.bm-card-gear{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary,#8a8f98);cursor:pointer}',
+      '.bm-card-gear:hover{background:var(--dsw-alias-bg-l2,rgba(127,127,127,.1));color:var(--dsw-alias-label-primary,inherit)}',
+      '.bm-card-body{display:flex;flex-direction:column;gap:6px;padding:8px;overflow:auto}',
+      '.bm-card-empty{margin:0;padding:16px 8px;text-align:center;font-size:12px;color:var(--dsw-alias-label-tertiary,#9aa0a6)}',
+      '.bm-card-error{display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;border:1px solid var(--dsw-alias-danger,#e5484d);color:var(--dsw-alias-danger,#e5484d);font-size:12px}',
+      '.bm-card-item{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.14));background:var(--dsw-alias-bg-l2,rgba(127,127,127,.05));color:inherit;font:inherit;cursor:pointer;animation:bm-item-frames 240ms cubic-bezier(.22,1,.36,1) both}',
+      '.bm-card-item:hover{border-color:var(--dsw-alias-accent,#3b82f6);background:var(--dsw-alias-bg-l2,rgba(127,127,127,.12))}',
+      '.bm-card-dot{flex:0 0 auto;width:8px;height:8px;margin-top:2px;border-radius:50%;background:var(--dsw-alias-label-tertiary,#9aa0a6)}',
+      '.bm-card-dot[data-bm-scope="session"]{background:#3b82f6}',
+      '.bm-card-dot[data-bm-scope="profile"]{background:#22c55e}',
+      '.bm-card-dot[data-bm-scope="user"]{background:#f59e0b}',
+      '.bm-card-item-text{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0}',
+      '.bm-card-item-title{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.bm-card-item-sub{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f98);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.bm-card-tag{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-tertiary,#9aa0a6);align-self:center}',
+      '.bm-card-toast{position:absolute;right:12px;bottom:10px;padding:6px 12px;border-radius:14px;background:var(--dsw-alias-accent,#3b82f6);color:#fff;font-size:12px;line-height:1;box-shadow:0 6px 18px rgba(0,0,0,.3);animation:bm-fade-frames 120ms ease both}',
+      /* ---- full page management mode ---- */
+      '.bm-overlay-backdrop{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.34);pointer-events:auto;-webkit-app-region:no-drag}',
+      '.bm-page{display:flex;flex-direction:column;width:min(720px,92vw);height:min(80vh,80vh);max-height:80vh;border-radius:14px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.24));background:var(--dsw-alias-bg-l1,#26262e);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 28px 72px rgba(0,0,0,.5);overflow:hidden;animation:bm-enter-frames 200ms cubic-bezier(.22,1,.36,1) both}',
+      '.bm-page-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.18))}',
+      '.bm-page-back{font-size:12px}',
+      '.bm-page-title{font-size:14px;font-weight:600}',
+      '.bm-page-spacer{flex:1 1 auto}',
+      '.bm-page-close{font-size:18px;line-height:1;padding:4px 10px}',
+      '.bm-page-switch{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.14));flex-wrap:wrap}',
+      '.bm-switch{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}',
+      '.bm-switch input{cursor:pointer;margin:0}',
+      '.bm-switch-error{font-size:11px;color:var(--dsw-alias-danger,#e5484d)}',
+      '.bm-page-body{flex:1 1 auto;overflow:auto;min-height:0}',
+      /* ---- keyframes ---- */
+      '@keyframes bm-enter-frames{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}',
       '@keyframes bm-item-frames{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}',
-      '@keyframes bm-out-frames{to{opacity:0;transform:scale(.92)}}',
+      '@keyframes bm-out-frames{from{opacity:1;transform:none}to{opacity:0;transform:scale(.96)}}',
       '@keyframes bm-fade-frames{from{opacity:0}to{opacity:1}}',
-      '@media (prefers-reduced-motion: reduce){.bm-panel,.bm-row:not(.bm-row-out){animation-name:bm-fade-frames !important;animation-duration:120ms !important;animation-delay:0ms !important}.bm-row-out{animation:bm-out-frames 1ms linear forwards !important}}',
+      '@keyframes bm-fade-out-frames{to{opacity:0}}',
+      /* reduced motion: opacity only, no displacement, no stagger. */
+      '@media (prefers-reduced-motion: reduce){.bm-panel,.bm-row:not(.bm-row-out){animation-name:bm-fade-frames !important;animation-duration:120ms !important;animation-delay:0ms !important}.bm-card,.bm-card-item,.bm-page{animation-name:bm-fade-frames !important;animation-duration:120ms !important;animation-delay:0ms !important}.bm-card-out{animation:bm-fade-out-frames 120ms linear forwards !important}.bm-row-out{animation:bm-out-frames 1ms linear forwards !important}}',
     ].join('\n');
 
     function injectStyle() {
       if (styleInjected === true) return;
       styleInjected = true;
       try {
+        if (typeof document === 'undefined') return;
         if (document.getElementById(STYLE_ID) !== null) return;
         const style = document.createElement('style');
         style.id = STYLE_ID;
@@ -167,14 +230,162 @@ window.__ModuleLoader__.load({
       return payload;
     }
 
+    /** Persist showTabEntry. GET + query (the host webserver only answers GET/HEAD). */
+    async function requestSettings(showTabEntry) {
+      const query = queryOf({ showTabEntry: showTabEntry === true ? '1' : '0' });
+      const response = await fetch(ROUTE + '/settings?' + query, { method: 'GET', headers: MARKER });
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (thrown) {
+        payload = null;
+      }
+      if (response.ok === false || payload === null || payload.ok === false) {
+        const reason = payload && payload.reason ? payload.reason : 'HTTP ' + response.status;
+        const detail = payload && payload.error ? '：' + payload.error : '';
+        throw new Error(reason + detail);
+      }
+      return payload;
+    }
+
+    /** Read {showTabEntry} out of a state or settings payload; missing settings means off. */
+    function settingsOf(source) {
+      const settings = source && typeof source === 'object' && source.settings && typeof source.settings === 'object'
+        ? source.settings
+        : null;
+      return { showTabEntry: settings !== null && settings.showTabEntry === true };
+    }
+
+    /** The id of the session currently shown in the main view, or '' when unknown. */
+    function currentSessionId(ctx) {
+      try {
+        const sessions = typeof ctx.get === 'function' ? ctx.get('sessions') : undefined;
+        if (!sessions || !sessions.list || typeof sessions.list.getSnapshot !== 'function') return '';
+        const snapshot = sessions.list.getSnapshot();
+        const byId = snapshot && snapshot.byId ? snapshot.byId : null;
+        if (!byId) return '';
+        const ids = Object.keys(byId);
+        for (let index = 0; index < ids.length; index += 1) {
+          const record = byId[ids[index]];
+          const retained = record && record.retainedBy ? record.retainedBy : null;
+          if (retained && (retained.mainView | 0) > 0) return ids[index];
+        }
+        return '';
+      } catch (thrown) {
+        return '';
+      }
+    }
+
+    function displayTitleOf(entry) {
+      if (entry && typeof entry.title === 'string' && entry.title !== '') return entry.title;
+      const first = String(entry && entry.body ? entry.body : '').split('\n')[0].trim();
+      if (first === '') return '（无标题）';
+      return first.length > 40 ? first.slice(0, 40) + '…' : first;
+    }
+
+    function bodyFirstLine(entry) {
+      const body = entry && typeof entry.body === 'string' ? entry.body : '';
+      const first = body.split('\n')[0].trim();
+      return first.length > 48 ? first.slice(0, 48) + '…' : first;
+    }
+
+    /** The clipboard text for one memo: 标题 newline 正文. */
+    function buildCopyText(entry) {
+      const body = entry && typeof entry.body === 'string' ? entry.body : '';
+      let title = entry && typeof entry.title === 'string' && entry.title !== '' ? entry.title : '';
+      if (title === '') {
+        const first = body.split('\n')[0].trim();
+        title = first.length > 40 ? first.slice(0, 40) + '…' : first || '（无标题）';
+      }
+      return body === '' ? title : title + '\n' + body;
+    }
+
+    /** Clipboard write: async Clipboard API first, then execCommand plus a temp textarea. */
+    async function copyTextToClipboard(text) {
+      const value = String(text);
+      try {
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+          await nav.clipboard.writeText(value);
+          return true;
+        }
+      } catch (thrown) {
+        /* Clipboard API rejected (permissions / insecure context): use the fallback. */
+      }
+      try {
+        if (typeof document === 'undefined') return false;
+        const area = document.createElement('textarea');
+        area.value = value;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.top = '-1000px';
+        area.style.left = '-1000px';
+        area.style.opacity = '0';
+        (document.body || document.documentElement).appendChild(area);
+        let ok = false;
+        try {
+          area.select();
+          ok = document.execCommand('copy') === true;
+        } catch (thrown) {
+          ok = false;
+        }
+        if (area.parentNode) area.parentNode.removeChild(area);
+        return ok;
+      } catch (thrown) {
+        return false;
+      }
+    }
+
+    function gearIcon() {
+      return h(
+        'svg',
+        {
+          width: 16,
+          height: 16,
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.8,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+        },
+        [
+          h('circle', { key: 'c', cx: 12, cy: 12, r: 3 }),
+          h('path', {
+            key: 'p',
+            d:
+              'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+          }),
+        ],
+      );
+    }
+
+    /** Flatten the three scopes into one card list, session then profile then user. */
+    function flattenEntries(payload) {
+      const out = [];
+      if (!payload) return out;
+      const scopes = ['session', 'profile', 'user'];
+      for (let s = 0; s < scopes.length; s += 1) {
+        const scope = scopes[s];
+        const rows = Array.isArray(payload[scope]) ? payload[scope] : [];
+        for (let index = 0; index < rows.length; index += 1) {
+          out.push({ entry: rows[index], scope: scope });
+        }
+      }
+      return out;
+    }
+
     /**
-     * The panel. props.sessionId is the id of the conversation currently shown
-     * on this tab; the host passes it to every conversation.view seat.
+     * The management UI (three scopes, add form, done toggle, inline edit, two
+     * step delete). Rendered as the tab seat (embedded=false, with its own head)
+     * or inside the overlay page (embedded=true, head supplied by the page).
      */
-    function Panel(props) {
+    function MemoPanel(props) {
       injectStyle();
 
       const sessionId = props && typeof props.sessionId === 'string' ? props.sessionId : '';
+      const embedded = props && props.embedded === true;
       const hasSession = sessionId !== '';
 
       const [payload, setPayload] = React.useState(null);
@@ -330,13 +541,6 @@ window.__ModuleLoader__.load({
               setError(messageOf(thrown));
             });
         }, wait);
-      }
-
-      function displayTitle(entry) {
-        if (typeof entry.title === 'string' && entry.title !== '') return entry.title;
-        const first = String(entry.body || '').split('\n')[0].trim();
-        if (first === '') return '（无标题）';
-        return first.length > 40 ? first.slice(0, 40) + '…' : first;
       }
 
       function renderHead() {
@@ -523,7 +727,7 @@ window.__ModuleLoader__.load({
                 h(
                   'span',
                   { key: 't', className: entry.done === true ? 'bm-row-title bm-done' : 'bm-row-title' },
-                  displayTitle(entry),
+                  displayTitleOf(entry),
                 ),
               ]),
             ]),
@@ -622,8 +826,8 @@ window.__ModuleLoader__.load({
           'data-better-memo-version': VERSION,
         },
         [
-          renderHead(),
-          showHint ? h('p', { key: 'hint', className: 'bm-hint' }, HINT_TEXT) : null,
+          embedded ? null : renderHead(),
+          !embedded && showHint ? h('p', { key: 'hint', className: 'bm-hint' }, HINT_TEXT) : null,
           renderForm(),
           error !== null ? renderError() : null,
           loading && payload === null ? h('p', { key: 'loading', className: 'bm-loading' }, '加载中…') : null,
@@ -641,12 +845,538 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * `ctx.slots` throws until the entry declares it, so ask with `ctx.get`,
-     * and retry briefly: the client half can apply before the renderer has
-     * published the service. No scope capture, no polling loop of our own.
+     * The overlay: capsule button plus either the floating card or the full page.
+     * Both card and page are portalled to document.body so a fixed position is
+     * never trapped by the shell.overlay container's stacking context.
      */
+    function OverlayEntry(props) {
+      injectStyle();
+
+      const getSessionId = props && typeof props.getSessionId === 'function' ? props.getSessionId : function () { return ''; };
+      const seat = props && props.seat ? props.seat : null;
+      const variant = props && props.variant === 'floating' ? 'floating' : 'topbar';
+
+      const [phase, setPhase] = React.useState('closed');
+      const [closing, setClosing] = React.useState(false);
+      const [payload, setPayload] = React.useState(null);
+      const [loading, setLoading] = React.useState(false);
+      const [error, setError] = React.useState(null);
+      const [settings, setSettings] = React.useState({ showTabEntry: false });
+      const [settingsSaving, setSettingsSaving] = React.useState(false);
+      const [settingsError, setSettingsError] = React.useState(null);
+      const [toast, setToast] = React.useState(null);
+      const [sessionId, setSessionId] = React.useState('');
+
+      const cardRef = React.useRef(null);
+      const capsuleRef = React.useRef(null);
+      const toastTimer = React.useRef(null);
+
+      function fetchState(sid) {
+        setLoading(true);
+        setError(null);
+        requestState(sid)
+          .then(function (next) {
+            setPayload(next);
+            setSettings(settingsOf(next));
+            setLoading(false);
+          })
+          .catch(function (thrown) {
+            setError(messageOf(thrown));
+            setLoading(false);
+          });
+      }
+
+      React.useEffect(function () {
+        const sid = getSessionId();
+        setSessionId(sid);
+        requestState(sid)
+          .then(function (next) {
+            setPayload(next);
+            setSettings(settingsOf(next));
+          })
+          .catch(function () {
+            /* the capsule still opens; its first refresh will retry */
+          });
+        return function () {
+          if (toastTimer.current !== null) {
+            clearTimeout(toastTimer.current);
+            toastTimer.current = null;
+          }
+        };
+      }, []);
+
+      React.useEffect(
+        function () {
+          if (toast === null) return undefined;
+          if (toastTimer.current !== null) clearTimeout(toastTimer.current);
+          toastTimer.current = setTimeout(function () {
+            toastTimer.current = null;
+            setToast(null);
+          }, COPY_MS);
+          return function () {
+            if (toastTimer.current !== null) {
+              clearTimeout(toastTimer.current);
+              toastTimer.current = null;
+            }
+          };
+        },
+        [toast],
+      );
+
+      function openCard() {
+        const sid = getSessionId();
+        setSessionId(sid);
+        setPhase('card');
+        setClosing(false);
+        fetchState(sid);
+      }
+
+      function requestClose() {
+        if (phase === 'card') {
+          if (closing) return;
+          if (prefersReduced()) {
+            setPhase('closed');
+            setClosing(false);
+          } else {
+            setClosing(true);
+          }
+        } else if (phase === 'page') {
+          setPhase('closed');
+          setClosing(false);
+        }
+      }
+
+      function toggle() {
+        if (phase === 'closed') openCard();
+        else requestClose();
+      }
+
+      function toPage() {
+        setPhase('page');
+        setClosing(false);
+      }
+
+      function backToCard() {
+        setPhase('card');
+        setClosing(false);
+        /* The page edits entries; the card list must not show the stale snapshot. */
+        fetchState(getSessionId());
+      }
+
+      function onCardAnimationEnd(event) {
+        if (event && event.target !== cardRef.current) return;
+        if (closing) {
+          setPhase('closed');
+          setClosing(false);
+        }
+      }
+
+      /* Outside click and ESC close the card. */
+      React.useEffect(
+        function () {
+          if (phase !== 'card') return undefined;
+          function onDown(event) {
+            const card = cardRef.current;
+            const capsule = capsuleRef.current;
+            if (card && card.contains(event.target)) return;
+            if (capsule && capsule.contains(event.target)) return;
+            requestClose();
+          }
+          function onKey(event) {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              requestClose();
+            }
+          }
+          document.addEventListener('mousedown', onDown, true);
+          document.addEventListener('keydown', onKey, true);
+          return function () {
+            document.removeEventListener('mousedown', onDown, true);
+            document.removeEventListener('keydown', onKey, true);
+          };
+        },
+        [phase, closing],
+      );
+
+      /* ESC backs out of the page. */
+      React.useEffect(
+        function () {
+          if (phase !== 'page') return undefined;
+          function onKey(event) {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              backToCard();
+            }
+          }
+          document.addEventListener('keydown', onKey, true);
+          return function () {
+            document.removeEventListener('keydown', onKey, true);
+          };
+        },
+        [phase],
+      );
+
+      function copyEntry(entry) {
+        copyTextToClipboard(buildCopyText(entry)).then(function (ok) {
+          setToast(ok ? '已复制' : '复制失败');
+        }).catch(function () {
+          setToast('复制失败');
+        });
+      }
+
+      function applyShowTab(next) {
+        const prev = settings;
+        const want = next === true;
+        setSettings({ showTabEntry: want });
+        setSettingsSaving(true);
+        setSettingsError(null);
+        requestSettings(want)
+          .then(function (result) {
+            const resolved = settingsOf(result);
+            setSettings({ showTabEntry: resolved.showTabEntry });
+            if (seat && typeof seat.setEnabled === 'function') seat.setEnabled(resolved.showTabEntry);
+            setSettingsSaving(false);
+          })
+          .catch(function (thrown) {
+            setSettings(prev);
+            setSettingsError(messageOf(thrown));
+            setSettingsSaving(false);
+          });
+      }
+
+      const entries = flattenEntries(payload);
+      const count = entries.length;
+
+      const capsule = h(
+        'button',
+        {
+          key: 'capsule',
+          ref: capsuleRef,
+          type: 'button',
+          className: 'bm-capsule' + (variant === 'floating' ? ' bm-capsule-floating' : ''),
+          'data-bm-entry': '1',
+          'data-better-memo-version': VERSION,
+          'data-bm-open': phase !== 'closed' ? '1' : '0',
+          'aria-label': '备忘录',
+          title: '备忘录',
+          onClick: toggle,
+        },
+        [
+          h('span', { key: 'label', className: 'bm-capsule-label' }, '备忘录'),
+          count > 0 ? h('span', { key: 'count', className: 'bm-capsule-count' }, String(count)) : null,
+        ],
+      );
+
+      function cardBody() {
+        const items = [];
+        if (loading && payload === null) {
+          items.push(h('p', { key: 'loading', className: 'bm-card-empty' }, '加载中…'));
+        } else if (error !== null) {
+          items.push(
+            h('div', { key: 'error', className: 'bm-card-error' }, [
+              h('span', { key: 'm' }, '出错了：' + error),
+              h(
+                'button',
+                {
+                  key: 'r',
+                  type: 'button',
+                  className: 'bm-btn bm-btn-ghost',
+                  onClick: function () {
+                    fetchState(sessionId);
+                  },
+                },
+                '重试',
+              ),
+            ]),
+          );
+        } else if (entries.length === 0) {
+          items.push(h('p', { key: 'empty', className: 'bm-card-empty' }, '还没有备忘录'));
+        } else {
+          entries.forEach(function (item, index) {
+            const delay = Math.min(index * STAGGER_MS, (MAX_STAGGER - 1) * STAGGER_MS) + 'ms';
+            const sub = bodyFirstLine(item.entry);
+            const rowChildren = [
+              h('span', { key: 'dot', className: 'bm-card-dot', 'data-bm-scope': item.scope, 'aria-hidden': 'true' }),
+              h('span', { key: 'text', className: 'bm-card-item-text' }, [
+                h('span', { key: 't', className: 'bm-card-item-title' }, displayTitleOf(item.entry)),
+                sub !== '' ? h('span', { key: 's', className: 'bm-card-item-sub' }, sub) : null,
+              ]),
+              h('span', { key: 'tag', className: 'bm-card-tag' }, SCOPE_TAG[item.scope] || item.scope),
+            ];
+            items.push(
+              h(
+                'button',
+                {
+                  key: item.entry.id || 'entry-' + index,
+                  type: 'button',
+                  className: 'bm-card-item',
+                  'data-bm-copy': item.entry.id || '',
+                  'data-bm-scope': item.scope,
+                  title: displayTitleOf(item.entry),
+                  style: closing ? undefined : { animationDelay: delay },
+                  onClick: function () {
+                    copyEntry(item.entry);
+                  },
+                },
+                rowChildren,
+              ),
+            );
+          });
+        }
+        return items;
+      }
+
+      function cardNode() {
+        return h(
+          'div',
+          {
+            key: 'card',
+            ref: cardRef,
+            className: 'bm-card' + (closing ? ' bm-card-out' : '') + (variant === 'floating' ? ' bm-card-floating' : ''),
+            'data-bm-card': '1',
+            onAnimationEnd: onCardAnimationEnd,
+          },
+          [
+            h('div', { key: 'head', className: 'bm-card-head' }, [
+              h('span', { key: 'title', className: 'bm-card-title' }, '备忘录'),
+              h('span', { key: 'count', className: 'bm-card-count' }, String(count)),
+              h('span', { key: 'spacer', className: 'bm-card-spacer' }),
+              h(
+                'button',
+                {
+                  key: 'gear',
+                  type: 'button',
+                  className: 'bm-card-gear',
+                  'data-bm-gear': '1',
+                  'aria-label': '设置',
+                  title: '设置',
+                  onClick: toPage,
+                },
+                gearIcon(),
+              ),
+            ]),
+            h('div', { key: 'body', className: 'bm-card-body' }, cardBody()),
+            toast !== null ? h('div', { key: 'toast', className: 'bm-card-toast', role: 'status' }, toast) : null,
+          ],
+        );
+      }
+
+      function pageNode() {
+        return h('div', { key: 'page', className: 'bm-overlay-backdrop', 'data-bm-backdrop': '1' }, [
+          h('div', { key: 'panel', className: 'bm-page', 'data-bm-page': '1' }, [
+            h('div', { key: 'head', className: 'bm-page-head' }, [
+              h(
+                'button',
+                { key: 'back', type: 'button', className: 'bm-btn bm-btn-ghost bm-page-back', 'data-bm-back': '1', onClick: backToCard },
+                '← 返回',
+              ),
+              h('span', { key: 'title', className: 'bm-page-title' }, '备忘录设置'),
+              h('span', { key: 'spacer', className: 'bm-page-spacer' }),
+              h(
+                'button',
+                {
+                  key: 'close',
+                  type: 'button',
+                  className: 'bm-btn bm-btn-ghost bm-page-close',
+                  'data-bm-close': '1',
+                  'aria-label': '关闭',
+                  onClick: function () {
+                    setPhase('closed');
+                    setClosing(false);
+                  },
+                },
+                '×',
+              ),
+            ]),
+            h('div', { key: 'switch', className: 'bm-page-switch' }, [
+              h('label', { key: 'label', className: 'bm-switch' }, [
+                h('input', {
+                  key: 'input',
+                  type: 'checkbox',
+                  'data-bm-showtab': '1',
+                  checked: settings.showTabEntry === true,
+                  disabled: settingsSaving,
+                  onChange: function (event) {
+                    applyShowTab(event.target.checked);
+                  },
+                }),
+                h('span', { key: 'text' }, '在会话 tab 行显示「备忘录」入口'),
+              ]),
+              settingsError !== null ? h('span', { key: 'err', className: 'bm-switch-error' }, settingsError) : null,
+            ]),
+            h('div', { key: 'body', className: 'bm-page-body' }, h(MemoPanel, { sessionId: sessionId, embedded: true })),
+          ]),
+        ]);
+      }
+
+      let overlay = null;
+      if (phase === 'card') overlay = cardNode();
+      else if (phase === 'page') overlay = pageNode();
+
+      const portal = overlay !== null && typeof document !== 'undefined' && document.body
+        ? ReactDOM.createPortal(overlay, document.body)
+        : null;
+
+      return h(React.Fragment, null, [capsule, portal]);
+    }
+
+    /**
+     * Owns the single conversation.view tab seat. Registering and disposing are
+     * the two moments the settings switch drives; a not-yet-declared slot is
+     * retried (never assumed), matching the "ask slots.spec first" rule.
+     */
+    function createSeatController(ctx) {
+      let dispose = null;
+      let enabled = false;
+      let attempts = 0;
+      let timer = null;
+
+      function slotsOf() {
+        try {
+          return typeof ctx.get === 'function' ? ctx.get('slots') : undefined;
+        } catch (thrown) {
+          return undefined;
+        }
+      }
+
+      function clearTimer() {
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      }
+
+      function schedule() {
+        clearTimer();
+        if (!enabled) return;
+        if (attempts >= RETRY_LIMIT) return;
+        attempts += 1;
+        timer = setTimeout(function () {
+          timer = null;
+          register();
+        }, RETRY_MS);
+      }
+
+      function register() {
+        if (!enabled || dispose !== null) return;
+        const slots = slotsOf();
+        if (!slots || typeof slots.register !== 'function') {
+          schedule();
+          return;
+        }
+        let declared = false;
+        try {
+          declared = typeof slots.spec === 'function' && slots.spec(SLOT) !== undefined;
+        } catch (thrown) {
+          declared = false;
+        }
+        if (!declared) {
+          schedule();
+          return;
+        }
+        try {
+          dispose = slots.register(
+            { name: SLOT, id: SEAT_ID, order: 1, label: function () { return '备忘录'; } },
+            function (props) {
+              const sid = props && typeof props.sessionId === 'string' ? props.sessionId : '';
+              return h(MemoPanel, { sessionId: sid, embedded: false });
+            },
+          );
+        } catch (thrown) {
+          dispose = null;
+          schedule();
+        }
+      }
+
+      function setEnabled(next) {
+        const want = next === true;
+        enabled = want;
+        if (want) {
+          attempts = 0;
+          register();
+        } else {
+          clearTimer();
+          attempts = 0;
+          if (dispose !== null) {
+            const drop = dispose;
+            dispose = null;
+            try {
+              drop();
+            } catch (thrown) {
+              /* host already released it */
+            }
+          }
+        }
+      }
+
+      return {
+        setEnabled: setEnabled,
+        isEnabled: function () { return enabled; },
+        hasSeat: function () { return dispose !== null; },
+      };
+    }
+
+    function mountBodyFallback(deps) {
+      if (typeof document === 'undefined' || !document.body) return;
+      try {
+        const host = document.createElement('div');
+        host.id = FALLBACK_HOST_ID;
+        host.setAttribute('data-better-memo-overlay', '');
+        document.body.appendChild(host);
+        const root = ReactDOMClient.createRoot(host);
+        root.render(h(OverlayEntry, { seat: deps.seat, getSessionId: deps.getSessionId, variant: 'floating' }));
+      } catch (thrown) {
+        console.error('[better-memo] floating entry failed', thrown);
+      }
+    }
+
     function apply(ctx) {
-      const waitForSlots = (attemptsLeft) => {
+      injectStyle();
+      const seat = createSeatController(ctx);
+      const deps = {
+        seat: seat,
+        getSessionId: function () {
+          return currentSessionId(ctx);
+        },
+      };
+
+      let overlayMounted = false;
+      let seatStarted = false;
+
+      function startSeat() {
+        if (seatStarted) return;
+        seatStarted = true;
+        requestState('')
+          .then(function (payload) {
+            seat.setEnabled(settingsOf(payload).showTabEntry);
+          })
+          .catch(function () {
+            /* unreachable host: leave the seat off */
+          });
+      }
+
+      function registerCapsule(slots) {
+        if (overlayMounted) return;
+        try {
+          slots.register(
+            { name: TOPBAR_SLOT, id: CAPSULE_ID, order: 0, label: function () { return '备忘录'; } },
+            function () {
+              return h(OverlayEntry, { seat: seat, getSessionId: deps.getSessionId, variant: 'topbar' });
+            },
+          );
+          overlayMounted = true;
+        } catch (thrown) {
+          console.error('[better-memo] capsule registration failed', thrown);
+        }
+      }
+
+      function mountFloating() {
+        if (overlayMounted) return;
+        overlayMounted = true;
+        mountBodyFallback(deps);
+      }
+
+      function boot(attemptsLeft) {
         let slots = null;
         try {
           slots = typeof ctx.get === 'function' ? ctx.get('slots') : undefined;
@@ -654,30 +1384,48 @@ window.__ModuleLoader__.load({
           slots = undefined;
         }
         if (slots === undefined || slots === null) {
-          if (attemptsLeft > 0) setTimeout(() => waitForSlots(attemptsLeft - 1), 250);
-          return;
-        }
-        try {
-          if (slots.spec(SLOT) === undefined) {
-            if (attemptsLeft > 0) setTimeout(() => waitForSlots(attemptsLeft - 1), 250);
+          if (attemptsLeft > 0) {
+            setTimeout(function () { boot(attemptsLeft - 1); }, RETRY_MS);
             return;
           }
-          slots.register(
-            {
-              name: SLOT,
-              id: SEAT_ID,
-              order: 1,
-              label: () => '备忘录',
-            },
-            Panel,
-          );
-        } catch (thrown) {
-          console.error('[better-memo] seat registration failed', thrown);
+          mountFloating();
+          return;
         }
-      };
-      waitForSlots(20);
+        startSeat();
+        let hasOverlay = false;
+        try {
+          hasOverlay = typeof slots.spec === 'function' && slots.spec(TOPBAR_SLOT) !== undefined;
+        } catch (thrown) {
+          hasOverlay = false;
+        }
+        if (hasOverlay) {
+          registerCapsule(slots);
+          return;
+        }
+        if (attemptsLeft > 0) {
+          setTimeout(function () { boot(attemptsLeft - 1); }, RETRY_MS);
+          return;
+        }
+        mountFloating();
+      }
+
+      boot(RETRY_LIMIT);
     }
 
-    return { apply };
+    return {
+      apply,
+      /* Exposed only for the headless logic probe; the loader ignores extra keys. */
+      __probe: {
+        buildCopyText: buildCopyText,
+        displayTitleOf: displayTitleOf,
+        settingsOf: settingsOf,
+        copyTextToClipboard: copyTextToClipboard,
+        createSeatController: createSeatController,
+        requestSettings: requestSettings,
+        currentSessionId: currentSessionId,
+        flattenEntries: flattenEntries,
+        constants: { VERSION: VERSION, VERSION_STRING: '0.2.0' },
+      },
+    };
   },
 });

@@ -1,8 +1,8 @@
 {
   "name": "dsh-better-memo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
-  "description": "Memo notes for DeepSeek Harness in three scopes — this session, this profile, or the user only — with agent tools to read and edit them. 三层备忘录：会话级 / profile 级 / 仅用户可见。",
+  "description": "A popout memo card for DeepSeek Harness: top-bar capsule, one-line memos you copy with a click, three scopes (this session / this profile / you only) and agent tools to read and edit them. 浮窗备忘录：顶栏胶囊、点一条即复制、三档归属。",
   "type": "module",
   "main": "./index.js",
   "exports": {

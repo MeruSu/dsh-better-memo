@@ -8,7 +8,7 @@
  * `user` scope is the user's own drawer. No tool returns it and no tool writes
  * it — only the panel does, over the route.
  */
-import { addEntry, AGENT_SCOPES, deleteEntry, read, updateEntry, visibleTo, write, LIMITS } from './lib/store.js';
+import { addEntry, AGENT_SCOPES, deleteEntry, patchSettings, read, readSettings, updateEntry, visibleTo, write, LIMITS } from './lib/store.js';
 
 export const name = 'dsh-better-memo';
 export const inject = ['tools', 'systemPrompt'];
@@ -74,6 +74,7 @@ function panelPayload({ sessionId, profile, env = process.env }) {
     profile: seen.profile.map(shape),
     user: seen.user.map(shape),
     limits: LIMITS,
+    settings: readSettings(db),
   };
 }
 
@@ -131,6 +132,33 @@ export function serveWrite(request, env = process.env) {
   }
 }
 
+/**
+ * Settings are the plugin's own preferences (not memo content). They live next
+ * to the entries but are patched separately and are never exposed to the agent
+ * tools. Query-param style, matching /write: `?showTabEntry=1|0`.
+ */
+export function serveSettings(request, env = process.env) {
+  if (markerOk(request) === false) return Response.json({ ok: false, reason: 'no-marker' }, { status: 403 });
+  try {
+    const params = new URL(request.url).searchParams;
+    const patch = {};
+    if (params.has('showTabEntry')) {
+      const raw = String(params.get('showTabEntry'));
+      patch.showTabEntry = raw === '1' || raw === 'true';
+    }
+    if (Object.keys(patch).length === 0) {
+      return Response.json({ ok: false, reason: 'bad-query', error: 'expected ?showTabEntry=1|0' }, { status: 400 });
+    }
+    const db = read(env);
+    const settings = patchSettings(db, patch);
+    write(db, env);
+    return Response.json({ ok: true, settings });
+  } catch (thrown) {
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    return Response.json({ ok: false, reason: 'error', error: message }, { status: 400 });
+  }
+}
+
 /** One prefix, dispatched by pathname so router order cannot pick the handler. */
 export function serveRequest(request, env = process.env) {
   let pathname = '';
@@ -141,6 +169,7 @@ export function serveRequest(request, env = process.env) {
   }
   if (pathname === `${ROUTE}/state`) return serveState(request, env);
   if (pathname === `${ROUTE}/write`) return serveWrite(request, env);
+  if (pathname === `${ROUTE}/settings`) return serveSettings(request, env);
   return Response.json({ ok: false, reason: 'not-found' }, { status: 404 });
 }
 
