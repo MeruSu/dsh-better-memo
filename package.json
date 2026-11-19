@@ -1,0 +1,68 @@
+{
+  "name": "dsh-better-memo",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Memo notes for DeepSeek Harness in three scopes — this session, this profile, or the user only — with agent tools to read and edit them. 三层备忘录：会话级 / profile 级 / 仅用户可见。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.png"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "locale",
+    "icon.png"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "icon": "./icon.png",
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "memo",
+    "notes",
+    "todo",
+    "cordis"
+  ],
+  "author": {
+    "name": "MeruSu"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MeruSu/dsh-better-memo.git"
+  },
+  "homepage": "https://github.com/MeruSu/dsh-better-memo#readme",
+  "bugs": {
+    "url": "https://github.com/MeruSu/dsh-better-memo/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "os": [
+    "win32"
+  ],
+  "license": "MIT"
+}

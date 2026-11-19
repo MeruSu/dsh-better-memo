@@ -1,0 +1,5 @@
+# dsh-better-memo：三层备忘录（会话级 / profile 级 / 仅用户可见）。
+# host 半边：memo_list / memo_edit 两个工具 + /better-memo 路由；client 半边：tab 座位与表单。
+- insert:
+    - id: better-memo
+      name: "dsh-better-memo"
