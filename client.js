@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
     const ReactDOMClient = require('react-dom/client');
 
     const NS = 'better-memo';
-    const VERSION = '0.2.2';
+    const VERSION = '0.2.3';
     const SLOT = 'conversation.view';
     const SEAT_ID = 'better-memo-seat';
     const TOPBAR_SLOT = 'shell.overlay';
@@ -87,10 +87,10 @@ window.__ModuleLoader__.load({
       '.bm-input:focus{outline:none;border-color:var(--dsw-alias-accent,#3b82f6);box-shadow:0 0 0 3px rgba(47,111,237,.14)}',
       '.bm-select{font:inherit;font-size:13px;border-radius:8px;border:1px solid var(--dsw-alias-border-l3,rgba(15,23,42,.16));background:#fff;color:inherit;padding:6px 8px}',
       '.bm-textarea{resize:vertical;min-height:62px;line-height:19px}',
-      '.bm-form .bm-textarea{min-height:120px}',
+      '.bm-form .bm-textarea{min-height:186px}',
       // 改一条的时候正文框是主角：高 200px（原来 62），并且把整个页面撑宽到接近窗口
       '.bm-edit{padding:2px 0 4px}',
-      '.bm-edit .bm-textarea{min-height:200px;font-size:13px}',
+      '.bm-edit .bm-textarea{min-height:186px;font-size:13px}',
       '.bm-form-actions{display:flex;justify-content:flex-end;gap:8px}',
       '.bm-note{margin:0;font-size:11px;color:var(--dsw-alias-label-tertiary,#9aa0a6)}',
       '.bm-groups{display:flex;flex-direction:column;gap:18px}',
@@ -106,7 +106,7 @@ window.__ModuleLoader__.load({
       '.bm-check input{margin:2px 0 0;accent-color:var(--dsw-alias-accent,#3b82f6)}',
       '.bm-row-title{font-size:13px;font-weight:500;line-height:18px;word-break:break-word}',
       '.bm-done{text-decoration:line-through;color:var(--dsw-alias-label-tertiary,#9aa0a6)}',
-      '.bm-row-body{margin:0;padding-left:26px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#8a8f98);white-space:pre-wrap;word-break:break-word;max-height:120px;overflow:auto}',
+      '.bm-row-body{margin:0;padding-left:26px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#8a8f98);white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto}',
       '.bm-row-actions{display:flex;flex:0 0 auto;gap:2px;opacity:.55;transition:opacity 120ms ease}',
       '.bm-row:hover .bm-row-actions,.bm-row:focus-within .bm-row-actions{opacity:1}',
       '.bm-row-act{font-size:11.5px;padding:4px 8px;border-radius:6px}',
@@ -155,7 +155,7 @@ window.__ModuleLoader__.load({
       '.bm-card-toast{position:absolute;right:12px;bottom:12px;padding:7px 13px;border-radius:999px;background:var(--bm-accent);color:#fff;font-size:12px;line-height:1;box-shadow:0 8px 20px rgba(16,24,40,.22);animation:bm-fade-frames 120ms ease both}',
       /* ---- settings page ---- */
       '.bm-overlay-backdrop{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:center;justify-content:center;background:rgba(16,24,40,.32);pointer-events:auto;-webkit-app-region:no-drag}',
-      '.bm-page{display:flex;flex-direction:column;width:min(720px,92vw);height:min(80vh,80vh);max-height:80vh;border-radius:16px;border:1px solid var(--bm-line-2);background:var(--bm-surface);color:var(--bm-fg);box-shadow:0 24px 64px rgba(16,24,40,.22),0 4px 12px rgba(16,24,40,.10);overflow:hidden;transition:width 180ms cubic-bezier(.22,1,.36,1);animation:bm-enter-frames 200ms cubic-bezier(.22,1,.36,1) both}',
+      '.bm-page{display:flex;flex-direction:column;width:min(720px,92vw);height:min(80vh,80vh);max-height:80vh;border-radius:16px;border:1px solid var(--bm-line-2);background:var(--bm-surface);color:var(--bm-fg);box-shadow:0 24px 64px rgba(16,24,40,.22),0 4px 12px rgba(16,24,40,.10);overflow:hidden;animation:bm-enter-frames 200ms cubic-bezier(.22,1,.36,1) both}',
       '.bm-page-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bm-line)}',
       '.bm-page-back{font-size:12px}',
       '.bm-page-title{font-size:14px;font-weight:600;color:var(--bm-fg)}',
@@ -166,8 +166,6 @@ window.__ModuleLoader__.load({
       '.bm-switch input{cursor:pointer;margin:0}',
       '.bm-switch-error{font-size:11px;color:#d1242f}',
       '.bm-page-body{flex:1 1 auto;overflow:auto;min-height:0;background:var(--bm-surface)}',
-      // 只要页里有条正在编辑，就把整页放宽（720 → 近满宽），正文框随之从约 660px 到约 1700px
-      '.bm-page:has(.bm-edit){width:min(1760px,96vw)}',
       /* ---- keyframes ---- */
       '@keyframes bm-enter-frames{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}',
       '@keyframes bm-item-frames{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}',
