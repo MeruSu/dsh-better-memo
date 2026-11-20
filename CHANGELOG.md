@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — 2026-11-21
+
+把 AI 工具从 2 个拆成 4 个（每档一个，档位固定），并新增「经批准后读仅用户可见」的工具。面板 UI 与 `client.js` 本次**零改动**。
+
+- **四个档位工具，`scope` 不再暴露给模型**（AI 选错 scope 是 0.2.x 的实际故障来源）：
+  - `memo_list`（读 `session`）/ `memo_list_shared`（读 `profile`）——每个读工具**只返回自己那一档**，`done` 仍过滤；`memo_list` 不再混着 profile 条目返回。
+  - `memo_edit`（写 `session`）/ `memo_edit_shared`（写 `profile`）——`add` 的 scope 由工具固定，`memo_edit_shared` 写入的条目 `scope` 恒为 `profile`；`args.scope` 一律忽略。
+  - `op=add|update|delete` 不变；`update` 现在可改 `done`（勾完成 / 取消）。`update`/`delete` 只认**自己那一档**的条目：跨会话、跨档、`user` 条目都返回 `{ ok:false, error:… }`。
+- **读工具按需注册**：`ctx.tools.register(def, { when })`，每模型步求值一次。`memo_list` 仅在本会话确有 `session` 条目时暴露，`memo_list_shared` 仅在 `profile` 档非空时暴露；为空时工具**连声明都不下发、也调不到**。写工具恒可用（否则第一条永远写不出来）。`when` 内部不抛异常：读盘失败 / 拿到 `agent` 里没有 id 都当作「不暴露」，避免 `TOOL_ACTIVATION_FAILED` 打死整个 step。
+- **新增 `memo_read_private`**（读 `user`，仅用户可见）：
+  - 走宿主自带的批准服务（`ctx.approval` 的 `request({ agent, toolName, reason, signal })`，派给客户端批准面板），**软依赖** `ctx.get('approval')`——不放进 `exports.inject`，拿不到就不注册这个工具。
+  - 暴露条件：`user` 档非空。批准**一次性**：每次调用都重新问，不做永久授权。
+  - 允许 → 返回标题 + 正文 + id + 时间（`approval:'allowed-once'`、`oneShot:true`）；拒绝 / 取消 / 不可用 → 只返回 `{ ok:false, error:'user denied' | 'cancelled' | 'approval unavailable' }`，**不返回任何条目内容，连标题和条数都没有**。
+  - 只能在模型轮次进行中调用（批准服务自身的要求）。
+- `systemPrompt` 注入文案重写：本会话用 `memo_list`/`memo_edit`，全局共享用 `memo_list_shared`/`memo_edit_shared`，仅用户可见只能申请（`memo_read_private`）且可能被拒。
+- 测试：原 6 组全部保留（其中第 2、3 组按新契约改写：读工具不再合并两档、写工具不再能改别的档），新增 6 组共 12 组 —— 五个工具注册与软依赖、`when` 空库为 false 且有 `session` 条目时为 true、`memo_list` 只含 `session`、`memo_list_shared` 只含 `profile`、`memo_edit` 写不到 `user`（含 `args.scope='user'` 的偷写）、`memo_edit_shared` 写入 `scope=profile`、`memo_read_private` 允许返回内容 / 拒绝零泄露、`when` 与 `execute` 不抛异常。
+- 已知不同步：`client.js` 里的 `VERSION` 仍是 `0.2.3`（本次按要求不动客户端），面板自报版本会与包版本不一致，等客户端改动一起抬。
+
 ## 0.2.3 — 2026-11-20
 
 按更正后的口径重做 0.2.2：**不是宽度，是高度**（用户：宽度改回去，每一正文的高度改成 3 倍）。

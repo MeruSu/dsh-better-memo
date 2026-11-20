@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
     const ReactDOMClient = require('react-dom/client');
 
     const NS = 'better-memo';
-    const VERSION = '0.2.3';
+    const VERSION = '0.3.0';
     const SLOT = 'conversation.view';
     const SEAT_ID = 'better-memo-seat';
     const TOPBAR_SLOT = 'shell.overlay';
@@ -1500,7 +1500,7 @@ window.__ModuleLoader__.load({
         requestSettings: requestSettings,
         currentSessionId: currentSessionId,
         flattenEntries: flattenEntries,
-        constants: { VERSION: VERSION, VERSION_STRING: '0.2.0' },
+        constants: { VERSION: VERSION, VERSION_STRING: '0.3.0' },
       },
     };
   },
